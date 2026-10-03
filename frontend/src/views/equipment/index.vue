@@ -38,19 +38,22 @@
         <tr>
           <th v-for="column in columns" :key="column">{{ column }}</th>
           <th>当前状态</th>
+          <th>最近送检</th>
           <th>可执行动作</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
           <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
-          <td>{{ row.status }}</td>
+          <td>{{ resolvedStatus(row) }}</td>
+          <td>{{ latestInspectionLabel(row) }}</td>
           <td class="row-actions">
             <button
               v-for="action in actions"
               :key="action"
               class="link"
               type="button"
+              :disabled="!canRun(row, action)"
               @click="runAction(action, row)"
             >
               {{ action }}
@@ -58,7 +61,7 @@
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="columns.length + 2" class="empty-state">暂无消防装备数据，可先登记消防装备</td>
+          <td :colspan="columns.length + 3" class="empty-state">暂无消防装备数据，可先登记消防装备</td>
         </tr>
       </tbody>
     </table>
@@ -79,12 +82,21 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import {
+  canApplyEquipmentAction,
+  EQUIPMENT_ACTIONS,
+  EQUIPMENT_STATUSES,
+  latestInspection,
+  resolveEquipmentStatus,
+  rowRevision,
+} from '@/domain/equipment'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('equipment')
 const columns = ["装备编号", "装备名称", "装备类型", "规格型号", "保管林场", "购入日期", "最近检修日", "装备状态"]
-const actions = ["领用装备", "送检登记", "报废装备"]
-const statuses = ["可用", "已领用", "待检修", "已报废"]
+// 动作与状态口径全部来自领域状态机，页面不再自己维护一份
+const actions = EQUIPMENT_ACTIONS
+const statuses = EQUIPMENT_STATUSES
 const stats = [{"label": "装备总数", "value": 0}, {"label": "可用装备", "value": 0}, {"label": "待检修数", "value": 0}]
 
 const rows = ref<EntryRow[]>([])
@@ -95,9 +107,22 @@ const filterFields = columns.slice(0, 3)
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
-    count: rows.value.filter((row) => String(row.status) === status).length,
+    count: rows.value.filter((row) => resolveEquipmentStatus(row) === status).length,
   })),
 )
+
+function resolvedStatus(row: EntryRow): string {
+  return resolveEquipmentStatus(row)
+}
+
+function latestInspectionLabel(row: EntryRow): string {
+  const latest = latestInspection(row)
+  return latest ? `${latest.date} ${latest.conclusion}` : '—'
+}
+
+function canRun(row: EntryRow, action: string): boolean {
+  return canApplyEquipmentAction(row, action)
+}
 
 function resetFilters() {
   filters.value = {}
@@ -112,10 +137,15 @@ function openCreate() {
   errorMessage.value = '消防装备登记入口尚未接入审批流'
 }
 
-function runAction(action: string, row: EntryRow) {
+async function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
-  const result = applyAction(meta.key, Number(row.id), action)
+  // 带上读取时的行版本号：并发领用/报废只有一笔能落地，另一笔在这里收到冲突提示
+  const result = await applyAction(meta.key, Number(row.id), action, {
+    expectedRevision: rowRevision(row),
+  })
   if (!result.ok) {
+    // 先刷新到最新状态再亮出提示，否则 reload 会把错误消息清掉
+    reload()
     errorMessage.value = result.message
     return
   }

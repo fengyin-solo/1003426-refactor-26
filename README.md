@@ -67,5 +67,14 @@ npm run build
   `frontend/src/api/local-service.ts`。
 - 字段、状态、动作与流转目标集中在 `frontend/src/data/modules.ts`；示例数据在
   `frontend/src/data/seed.ts`。
-- 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。
+- 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。消防装备是例外中的
+  例外：它的领用、送检（含合格/不合格结论）、报废规则统一收在
+  `frontend/src/domain/equipment.ts`，`modules.ts` 的装备元数据、装备页、本地服务全部
+  从这一份状态机取数，不再各自解释；状态与送检记录冲突时以最近送检结论为准，没有送检
+  记录的旧装备仍按原规则保留。
+- 本地存储是带版本号的信封（`frontend/src/data/migrations.ts`）：旧格式数据读取时自动
+  迁移，装备行缺失的装备编号、规格型号、保管林场会按规则回填，行版本号用于并发领用 /
+  报废的乐观锁互斥（只有一项能落地）。
+- 扑火队伍页的「各队可用器材清单」按所属林场匹配装备的保管林场，装备流转落地后同步更新。
+- 领域规则与并发互斥有独立验证脚本：`cd frontend && npm run verify`。
 - 想回到初始数据：清掉浏览器里 `forest-fire-patrol:entries` 这一项，或调用 `resetModule(模块)`。

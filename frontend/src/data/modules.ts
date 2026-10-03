@@ -1,6 +1,8 @@
+import { EQUIPMENT_ACTIONS, EQUIPMENT_ACTION_TARGETS, EQUIPMENT_STATUSES } from '@/domain/equipment'
 import type { ModuleMeta } from './types'
 
 // 模块元数据由仓库生成时写入：字段、状态、动作、流转目标都在这里，页面不再各自写一遍。
+// 消防装备的动作与流转目标直接投影自 src/domain/equipment.ts 的状态机，规则只维护一份。
 export const MODULES: ModuleMeta[] = [
   {
     key: "patrol",
@@ -63,9 +65,9 @@ export const MODULES: ModuleMeta[] = [
     entity: "消防装备",
     desc: "维护消防装备，围绕装备编号、装备名称、装备类型、规格型号做登记、筛选与状态流转。",
     fields: ["装备编号", "装备名称", "装备类型", "规格型号", "保管林场", "购入日期", "最近检修日", "装备状态"],
-    statuses: ["可用", "已领用", "待检修", "已报废"],
-    actions: ["领用装备", "送检登记", "报废装备"],
-    actionTargets: {"领用装备": "已领用", "送检登记": "待检修", "报废装备": "已报废"},
+    statuses: EQUIPMENT_STATUSES,
+    actions: EQUIPMENT_ACTIONS,
+    actionTargets: EQUIPMENT_ACTION_TARGETS,
     metrics: ["装备总数", "可用装备", "待检修数"],
   },
   {

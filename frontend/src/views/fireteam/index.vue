@@ -63,6 +63,27 @@
       </tbody>
     </table>
 
+    <section class="gear-panel">
+      <h3 class="gear-title">各队可用器材清单</h3>
+      <p class="gear-desc">按所属林场匹配消防装备的保管林场，只列状态裁决为「可用」的器材；装备侧领用、送检、报废落地后这里同步更新。</p>
+      <div class="gear-grid">
+        <article v-for="team in rows" :key="`gear-${String(team.id)}`" class="gear-card">
+          <header class="gear-card-head">
+            <strong>{{ team['队伍名称'] }}</strong>
+            <span class="gear-farm">{{ team['所属林场'] }}</span>
+          </header>
+          <ul v-if="usableGearFor(team).length" class="gear-list">
+            <li v-for="gear in usableGearFor(team)" :key="String(gear.id)">
+              <span class="gear-code">{{ gear['装备编号'] }}</span>
+              <span>{{ gear['装备名称'] }}</span>
+              <span class="gear-spec">{{ gear['规格型号'] }}</span>
+            </li>
+          </ul>
+          <p v-else class="gear-empty">该林场暂无可用器材</p>
+        </article>
+      </div>
+    </section>
+
     <footer class="page-foot">
       <span>共 {{ total }} 条扑火队伍记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
@@ -71,14 +92,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import {
   downloadEntries,
   listEntries,
+  listUsableEquipment,
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { storageKey as storageKeyOfEntries } from '@/data/local-store'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('fireteam')
@@ -99,6 +122,34 @@ const statusSummary = computed(() =>
   })),
 )
 
+// 可用器材按保管林场分组缓存，队伍卡片按所属林场直接查
+const usableGear = ref<EntryRow[]>([])
+const usableGearByFarm = computed(() => {
+  const grouped = new Map<string, EntryRow[]>()
+  for (const gear of usableGear.value) {
+    const farm = String(gear['保管林场'] ?? '')
+    const list = grouped.get(farm) ?? []
+    list.push(gear)
+    grouped.set(farm, list)
+  }
+  return grouped
+})
+
+function usableGearFor(team: EntryRow): EntryRow[] {
+  return usableGearByFarm.value.get(String(team['所属林场'] ?? '')) ?? []
+}
+
+function refreshUsableGear() {
+  usableGear.value = listUsableEquipment()
+}
+
+function onStorage(event: StorageEvent) {
+  // 另一个标签页改了装备（领用/送检/报废落地），清单跟着更新
+  if (event.key === storageKeyOfEntries()) {
+    refreshUsableGear()
+  }
+}
+
 function resetFilters() {
   filters.value = {}
   reload()
@@ -112,9 +163,9 @@ function openCreate() {
   errorMessage.value = '扑火队伍登记入口尚未接入审批流'
 }
 
-function runAction(action: string, row: EntryRow) {
+async function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
-  const result = applyAction(meta.key, Number(row.id), action)
+  const result = await applyAction(meta.key, Number(row.id), action)
   if (!result.ok) {
     errorMessage.value = result.message
     return
@@ -128,10 +179,18 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    refreshUsableGear()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '扑火队伍列表读取失败'
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  reload()
+  window.addEventListener('storage', onStorage)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('storage', onStorage)
+})
 </script>
