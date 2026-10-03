@@ -3,7 +3,7 @@
     <header class="page-head">
       <div>
         <h2>扑火队伍管理</h2>
-        <p class="page-desc">维护扑火队伍，围绕队伍编号、队伍名称、所属林场、队长姓名做登记、筛选与状态流转。</p>
+        <p class="page-desc">{{ meta.desc }}</p>
       </div>
       <div class="page-actions">
         <button class="btn primary" type="button" @click="openCreate">登记扑火队伍</button>
@@ -63,6 +63,36 @@
       </tbody>
     </table>
 
+    <section class="sub-panel">
+      <header class="sub-panel-head">
+        <h3>可用器材清单</h3>
+        <span class="sub-panel-desc">
+          来自消防装备模块，按统一状态规则实时汇总（当前 {{ availableEquipment.length }} 件可领用）
+        </span>
+      </header>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>装备编号</th>
+            <th>装备名称</th>
+            <th>规格型号</th>
+            <th>保管林场</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in availableEquipment" :key="String(item.id)">
+            <td>{{ item['装备编号'] }}</td>
+            <td>{{ item['装备名称'] }}</td>
+            <td>{{ item['规格型号'] }}</td>
+            <td>{{ item['保管林场'] }}</td>
+          </tr>
+          <tr v-if="!availableEquipment.length">
+            <td colspan="4" class="empty-state">当前没有可领用的消防装备</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <footer class="page-foot">
       <span>共 {{ total }} 条扑火队伍记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
@@ -71,12 +101,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import {
   downloadEntries,
+  listAvailableEquipment,
   listEntries,
   moduleMeta,
+  onEntriesChanged,
   runAction as applyAction,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
@@ -92,6 +124,7 @@ const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const availableEquipment = ref<EntryRow[]>([])
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -122,16 +155,36 @@ function runAction(action: string, row: EntryRow) {
   reload()
 }
 
+function refreshAvailableEquipment() {
+  // 装备规则生效后，这里跟着统一规则实时更新
+  availableEquipment.value = listAvailableEquipment()
+}
+
 function reload() {
   errorMessage.value = ''
   try {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    refreshAvailableEquipment()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '扑火队伍列表读取失败'
   }
 }
 
-onMounted(reload)
+let unsubscribe: (() => void) | null = null
+
+onMounted(() => {
+  reload()
+  // 装备模块的领用/送检/报废落地后（含其他页签），可用器材清单跟着刷新
+  unsubscribe = onEntriesChanged((key) => {
+    if (key === 'equipment' || key === '*') {
+      refreshAvailableEquipment()
+    }
+  })
+})
+
+onUnmounted(() => {
+  unsubscribe?.()
+})
 </script>

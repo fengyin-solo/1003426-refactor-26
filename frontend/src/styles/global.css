@@ -35,3 +35,7 @@ body { margin: 0; background: #f6f8fb; color: #1f2937; }
 .error-text { color: #b42318; }
 .status-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
 .legend-item { background: #eef2f7; border-radius: 999px; padding: 2px 10px; }
+.sub-panel { margin-top: 16px; }
+.sub-panel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.sub-panel-head h3 { margin: 0; font-size: 14px; }
+.sub-panel-desc { color: var(--muted); font-size: 12px; }

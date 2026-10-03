@@ -3,7 +3,7 @@
     <header class="page-head">
       <div>
         <h2>消防装备管理</h2>
-        <p class="page-desc">维护消防装备，围绕装备编号、装备名称、装备类型、规格型号做登记、筛选与状态流转。</p>
+        <p class="page-desc">{{ meta.desc }}</p>
       </div>
       <div class="page-actions">
         <button class="btn primary" type="button" @click="openCreate">登记消防装备</button>
@@ -43,7 +43,7 @@
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-for="column in columns" :key="column">{{ row[column] || '—' }}</td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
             <button
@@ -71,27 +71,33 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import {
   downloadEntries,
   listEntries,
   moduleMeta,
+  onEntriesChanged,
   runAction as applyAction,
+  summarizeEquipment,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
 
+// 字段、动作、状态全部来自统一规则（equipment-rules 经 modules 元数据下发），页面不再自留副本
 const meta = moduleMeta('equipment')
-const columns = ["装备编号", "装备名称", "装备类型", "规格型号", "保管林场", "购入日期", "最近检修日", "装备状态"]
-const actions = ["领用装备", "送检登记", "报废装备"]
-const statuses = ["可用", "已领用", "待检修", "已报废"]
-const stats = [{"label": "装备总数", "value": 0}, {"label": "可用装备", "value": 0}, {"label": "待检修数", "value": 0}]
+const columns = meta.fields
+const actions = meta.actions
+const statuses = meta.statuses
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
+const summary = ref<Record<string, number>>({})
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const stats = computed(() =>
+  meta.metrics.map((label: string) => ({ label, value: summary.value[label] ?? 0 })),
+)
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -128,10 +134,25 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    summary.value = summarizeEquipment()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '消防装备列表读取失败'
   }
 }
 
-onMounted(reload)
+let unsubscribe: (() => void) | null = null
+
+onMounted(() => {
+  reload()
+  // 别的页签改了装备数据时跟着刷新，保持有效状态一致
+  unsubscribe = onEntriesChanged((key) => {
+    if (key === 'equipment' || key === '*') {
+      reload()
+    }
+  })
+})
+
+onUnmounted(() => {
+  unsubscribe?.()
+})
 </script>
